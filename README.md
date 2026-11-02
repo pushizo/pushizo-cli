@@ -13,18 +13,6 @@
 
 **Pushizo CLI** — The `pushizo` command for scripts and terminals. Lists apps, segments and templates as JSON and sends a notification to subscribed users. Reads PUSHIZO_API_KEY, PUSHIZO_APP_ID and PUSHIZO_API_URL from the environment; the key is never printed. Node.js 20+, no dependencies.
 
-> **Status:** @pushizo/cli 0.1.0 is not on npm yet; until then you can install the release archive from this repository.<br>
-> **Durum:** @pushizo/cli 0.1.0 henüz npm'de değil; o zamana kadar bu deponun sürüm arşivinden kurabilirsiniz.
-
-**Install from GitHub until then · O zamana kadar GitHub'dan kurulum:**
-
-```bash
-npm install -g --allow-remote=root https://github.com/pushizo/pushizo-cli/releases/download/v0.1.0/pushizo-cli-0.1.0.tgz
-pushizo --help
-```
-
-**After publication · Yayından sonra:**
-
 ```bash
 npm install -g @pushizo/cli
 pushizo --help
