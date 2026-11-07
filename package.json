@@ -1,6 +1,6 @@
 {
   "name": "@pushizo/cli",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pushizo command-line tool: list apps, segments and templates, send notifications",
   "license": "MIT",
   "homepage": "https://docs.pushizo.com/docs/integrations/cli-sdks",
