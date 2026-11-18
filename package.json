@@ -25,7 +25,7 @@
   },
   "type": "module",
   "bin": {
-    "pushizo": "./dist/index.js"
+    "pushizo": "dist/index.js"
   },
   "files": [
     "dist",
