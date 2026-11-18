@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { HELP, run, VERSION } from './cli.js';
 
 function harness(response?: { status: number; body: string }) {
@@ -71,5 +75,73 @@ describe('pushizo cli', () => {
     const h = harness();
     expect(await run(['nope'], {}, h.io)).toBe(1);
     expect(h.err.join('')).toContain('nope');
+  });
+});
+
+describe('pushizo channels (ADR-0097)', () => {
+  const dir = realpathSync(mkdtempSync(path.join(tmpdir(), 'pushizo-cli-')));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+  const p8 = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+  const secret = `cs_${randomBytes(14).toString('hex')}`;
+  writeFileSync(path.join(dir, 'AuthKey_ABCDE12345.p8'), p8);
+  writeFileSync(path.join(dir, 'secret.txt'), secret);
+  const env = { PUSHIZO_API_KEY: 'hs_live_gizli_anahtar', PUSHIZO_APP_ID: 'app_1', PUSHIZO_API_URL: 'https://api.test' };
+
+  function channelHarness(replies: { status: number; body: unknown }[]) {
+    const out: string[] = [];
+    const err: string[] = [];
+    const requests: { url: string; method?: string; body?: string }[] = [];
+    const fetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: url as string, method: init?.method, body: init?.body as string | undefined });
+      const reply = replies[requests.length - 1] ?? { status: 200, body: {} };
+      return new Response(JSON.stringify(reply.body), { status: reply.status });
+    });
+    return { out, err, requests, io: { out: (t: string) => void out.push(t), err: (t: string) => void err.push(t), fetch, cwd: dir } };
+  }
+
+  it('channels status kanal özetini yazar', async () => {
+    const h = channelHarness([{ status: 200, body: { data: [{ channel: 'ios_push', provider: 'apns', status: 'active' }] } }]);
+    expect(await run(['channels', 'status'], env, h.io)).toBe(0);
+    expect(h.requests[0]).toMatchObject({ url: 'https://api.test/v1/apps/app_1/channels/status', method: 'GET' });
+    expect(h.out.join('')).toContain('"active"');
+  });
+
+  it('apns: dosyadan yükler, doğrular; anahtar içeriği ve API anahtarı çıktıya yazılmaz', async () => {
+    const h = channelHarness([
+      { status: 200, body: { channel: 'ios_push', config: {} } },
+      { status: 200, body: { ok: true, channel: { status: 'active' } } },
+    ]);
+    const code = await run(['channels', 'apns', '--key-file', 'AuthKey_ABCDE12345.p8', '--team-id', 'TEAM123456', '--bundle-id', 'com.example.app', '--environment', 'production'], env, h.io);
+    expect(code).toBe(0);
+    expect(h.requests.map((r) => `${r.method} ${r.url}`)).toEqual(['PUT https://api.test/v1/apps/app_1/channels/ios_push', 'POST https://api.test/v1/apps/app_1/channels/ios_push/validate']);
+    expect(JSON.parse(h.requests[0]!.body!)).toMatchObject({ provider: 'apns', key_id: 'ABCDE12345', team_id: 'TEAM123456', environment: 'production', p8: p8.trim() });
+    const printed = h.out.join('') + h.err.join('');
+    expect(JSON.parse(h.out.join(''))).toMatchObject({ channel: 'ios_push', saved: true, ok: true, status: 'active' });
+    expect(printed).not.toContain('PRIVATE KEY');
+    expect(printed).not.toContain(p8.split('\n')[1]!);
+    expect(printed).not.toContain(env.PUSHIZO_API_KEY);
+  });
+
+  it('doğrulama başarısızsa 1 döner ve yankılanan sır arındırılır', async () => {
+    const h = channelHarness([
+      { status: 200, body: {} },
+      { status: 200, body: { ok: false, kind: 'auth', code: 'invalid_client', message: `bad secret ${secret}`, channel: { status: 'invalid' } } },
+    ]);
+    expect(await run(['channels', 'hms', '--hms-app-id', '123456789', '--client-secret-file', 'secret.txt'], env, h.io)).toBe(1);
+    expect(JSON.parse(h.out.join(''))).toMatchObject({ status: 'invalid', error_code: 'invalid_client', message: 'bad secret [redacted]' });
+    expect(h.out.join('')).not.toContain(secret);
+  });
+
+  it('kök dışındaki dosya, bilinmeyen seçenek ve sır değeri alan bayrak reddedilir; istek atılmaz', async () => {
+    const outside = channelHarness([]);
+    expect(await run(['channels', 'apns', '--key-file', '../AuthKey_ABCDE12345.p8', '--team-id', 'TEAM123456', '--bundle-id', 'a.b.c', '--environment', 'sandbox'], env, outside.io)).toBe(1);
+    expect(outside.err.join('')).toContain('PATH_OUTSIDE_ROOT');
+    const unknown = channelHarness([]);
+    expect(await run(['channels', 'hms', '--hms-app-id', '123456789', '--client-secret', secret], env, unknown.io)).toBe(1);
+    expect(unknown.err.join('')).toContain('--client-secret');
+    expect(unknown.err.join('')).not.toContain(secret);
+    const usage = channelHarness([]);
+    expect(await run(['channels', 'telegram'], env, usage.io)).toBe(1);
+    expect(outside.requests.length + unknown.requests.length + usage.requests.length).toBe(0);
   });
 });

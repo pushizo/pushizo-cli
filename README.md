@@ -11,7 +11,7 @@
 
 ## English
 
-**Pushizo CLI** — The `pushizo` command for scripts and terminals. Lists apps, segments and templates as JSON and sends a notification to subscribed users. Reads PUSHIZO_API_KEY, PUSHIZO_APP_ID and PUSHIZO_API_URL from the environment; the key is never printed. Node.js 20+, no dependencies.
+**Pushizo CLI** — The `pushizo` command for scripts and terminals. Lists apps, segments and templates as JSON, sends a notification to subscribed users, and uploads push credentials from a file (`pushizo channels`) without printing their contents. Reads PUSHIZO_API_KEY, PUSHIZO_APP_ID and PUSHIZO_API_URL from the environment; the key is never printed. Node.js 20+, no dependencies.
 
 ```bash
 npm install -g @pushizo/cli
@@ -27,7 +27,7 @@ The detailed guide below is in Turkish; code samples are language-neutral. Full 
 # Pushizo CLI
 
 Betikler ve terminal için `pushizo` komutu. App, segment ve şablonları JSON olarak listeler; abone kullanıcılara
-bildirim gönderir. Node.js 20+; bağımlılığı yoktur.
+bildirim gönderir; push anahtarlarını dosyadan yükler ve doğrular. Node.js 20+; bağımlılığı yoktur.
 
 ## Kurulum
 
@@ -45,6 +45,7 @@ Kurmadan çalıştırmak için: `npx @pushizo/cli --help`.
 | `PUSHIZO_API_KEY` | App veya organizasyon API anahtarı (zorunlu). Çıktıya ve hata mesajlarına yazılmaz. |
 | `PUSHIZO_APP_ID` | `segments`, `templates` ve `send` için app kimliği |
 | `PUSHIZO_API_URL` | API adresi (varsayılan `https://api.pushizo.com`; yerelde `http://localhost:4000`) |
+| `PUSHIZO_CREDENTIALS_DIR` | `channels` komutunun anahtar dosyalarını okuyabileceği dizin (varsayılan: bulunduğunuz dizin) |
 
 Anahtarı komut satırı argümanı olarak vermeyin; kabuk geçmişine düşer. Ortam değişkeni veya gizli bilgi yöneticisi
 kullanın.
@@ -56,6 +57,7 @@ pushizo apps                         # app listesi
 pushizo segments                     # PUSHIZO_APP_ID segmentleri
 pushizo templates                    # PUSHIZO_APP_ID şablonları
 pushizo send "Başlık" "Gövde metni"  # "Subscribed Users" segmentine bildirim (en + tr aynı metin)
+pushizo channels status              # kanal başına sağlayıcı ve durum
 pushizo --version
 ```
 
@@ -66,6 +68,28 @@ pushizo segments | jq -r '.data[].name'
 ```
 
 Çıkış kodu başarıda `0`, eksik ayar, ağ veya HTTP hatasında `1`'dir; hata ayrıntısı standart hataya yazılır.
+
+## Push anahtarını dosyadan yükleme
+
+`pushizo channels <kanal>` anahtarı dosyadan okur, yükler ve sağlayıcıya doğrulatır. `admin` kapsamlı anahtar ister.
+
+```bash
+pushizo channels apns --key-file AuthKey_ABCDE12345.p8 --team-id TEAM123456 --bundle-id com.ornek.app --environment production
+pushizo channels apns --key-file sertifika.p12 --p12-password-env P12_PAROLA
+pushizo channels fcm --key-file firebase-servis-hesabi.json
+pushizo channels hms --hms-app-id 123456789 --client-secret-env HMS_CLIENT_SECRET
+pushizo channels adm --client-id amzn1.application-oa2-client.x --client-secret-file adm-secret.txt
+pushizo channels wns --package-sid ms-app://s-1-15-2-x --client-secret-file wns-secret.txt
+pushizo channels webpush --subject mailto:siz@ornek.com --site-url https://ornek.com
+```
+
+- `.p8` dosyasında Key ID `AuthKey_XXXXXXXXXX.p8` adından okunur; ad farklıysa `--key-id` verin.
+- Sır değeri alan seçenek yoktur: `client_secret` ve `.p12` parolası dosya yolu (`--…-file`) ya da ortam değişkeni
+  adı (`--…-env`) ile verilir; böylece kabuk geçmişine düşmez.
+- Dosyalar bulunduğunuz dizinin (ya da `PUSHIZO_CREDENTIALS_DIR`) altında olmalıdır; `..`, mutlak yol ve sembolik bağ
+  ile dışarı çıkış reddedilir. Anahtar dosyası en çok 64 KB, metin sırrı 4 KB olabilir.
+- Çıktı yalnız durumdur (`saved`, `ok`, `status`, `error_code`, `hint`, dosya adı, boyutu ve SHA-256 parmak izinin ilk
+  12 hanesi). Dosya içeriği ve sırlar yazdırılmaz. Doğrulama geçerse çıkış kodu `0`, geçmezse `1`'dir.
 
 Daha geniş kullanım (kullanıcılar, kampanyalar, analitik) için sunucu SDK'larını veya REST API'yi kullanın:
 [docs.pushizo.com/docs/api](https://docs.pushizo.com/docs/api).
